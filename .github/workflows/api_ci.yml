@@ -1,0 +1,92 @@
+name: API Tests CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  # ---------- BUILD ----------
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t api-tests .
+
+      - name: Save Docker image
+        run: docker save api-tests -o api-tests.tar
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-tests
+          path: api-tests.tar
+
+  # ---------- TEST ----------
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: api-tests
+          path: .
+
+      - name: Load Docker image
+        run: docker load -i api-tests.tar
+
+      - name: Run tests inside container
+        run: |
+          mkdir -p allure-results
+          docker run --rm -v ${{ github.workspace }}/allure-results:/app/allure-results api-tests
+
+      - name: Upload allure results
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results
+          path: allure-results
+
+  # ---------- REPORT ----------
+  allure-report:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Download allure results
+        uses: actions/download-artifact@v4
+        with:
+          name: allure-results
+          path: allure-results
+
+      - name: Generate Allure Report
+        run: |
+          wget https://github.com/allure-framework/allure2/releases/download/2.27.0/allure-2.27.0.tgz
+          tar -xzf allure-2.27.0.tgz
+          ./allure-2.27.0/bin/allure generate allure-results --clean -o public
+
+      - name: Upload report artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  # ---------- DEPLOY ----------
+  deploy:
+    runs-on: ubuntu-latest
+    needs: allure-report
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
