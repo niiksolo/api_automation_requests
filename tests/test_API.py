@@ -47,6 +47,7 @@ def test_get_object(obj_id):
       "Hard disk size": "2 TB"
    }
 }
+
 @allure.feature('update_object')
 @allure.story('PUT')
 def test_update_object(obj_id):
